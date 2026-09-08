@@ -1,0 +1,5 @@
+data/
+mlruns/
+mlflow.db
+*.ipynb
+.git
