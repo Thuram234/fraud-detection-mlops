@@ -1,0 +1,33 @@
+name: CI - Build and Test
+
+# Déclenche ce workflow à chaque push sur la branche main
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Étape 1 : récupère le code du repo
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Étape 2 : installe Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Étape 3 : installe les dépendances
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Étape 4 : vérifie que l'API démarre sans erreur (test basique)
+      - name: Test API import
+        run: python -c "from main import app; print('API importée avec succès')"
+
+      # Étape 5 : construit l'image Docker (vérifie que le Dockerfile fonctionne)
+      - name: Build Docker image
+        run: docker build -t fraud-detection-api .
