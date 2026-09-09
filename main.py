@@ -2,15 +2,19 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import joblib
 import numpy as np
+import pandas as pd
+import os
+from datetime import datetime
 
-# Chargement du modèle une seule fois, au démarrage de l'API
-# (pas à chaque requête, ce serait beaucoup trop lent)
 model = joblib.load("models/model.pkl")
 
 app = FastAPI(title="Fraud Detection API")
 
-# Définition du format attendu pour une transaction
-# Pydantic va automatiquement vérifier que chaque champ est bien un nombre décimal
+# Chemin du fichier où on va stocker l'historique des transactions reçues
+LOG_PATH = "logs/predictions_log.csv"
+os.makedirs("logs", exist_ok=True)
+
+
 class Transaction(BaseModel):
     Time: float
     V1: float
@@ -46,13 +50,13 @@ class Transaction(BaseModel):
 
 @app.get("/")
 def home():
-    """Route simple pour vérifier que l'API tourne bien."""
     return {"message": "Fraud Detection API is running"}
 
 
 @app.post("/predict")
 def predict(transaction: Transaction):
-    # Convertit les données reçues en tableau numpy, dans le MÊME ordre que lors de l'entraînement
+    data_dict = transaction.dict()
+
     data = np.array([[
         transaction.Time, transaction.V1, transaction.V2, transaction.V3,
         transaction.V4, transaction.V5, transaction.V6, transaction.V7,
@@ -64,12 +68,54 @@ def predict(transaction: Transaction):
         transaction.V28, transaction.Amount
     ]])
 
-    # Probabilité de fraude (colonne 1 = probabilité de la classe "1")
     proba = model.predict_proba(data)[0][1]
     is_fraud = bool(proba > 0.5)
+
+    # --- NOUVEAU : on enregistre cette transaction + son résultat dans le fichier de logs ---
+    log_entry = data_dict.copy()
+    log_entry["fraud_probability"] = float(proba)
+    log_entry["is_fraud"] = is_fraud
+    log_entry["timestamp"] = datetime.utcnow().isoformat()
+
+    log_df = pd.DataFrame([log_entry])
+    # Si le fichier existe déjà, on ajoute une ligne (mode "a") sans réécrire l'en-tête
+    log_df.to_csv(LOG_PATH, mode="a", header=not os.path.exists(LOG_PATH), index=False)
+    # --- FIN DE L'AJOUT ---
 
     return {
         "fraud_probability": round(float(proba), 4),
         "is_fraud": is_fraud,
         "risk_level": "high" if proba > 0.7 else "medium" if proba > 0.3 else "low"
     }
+
+
+@app.get("/monitoring/status")
+def monitoring_status():
+    """Petite route utilitaire pour vérifier combien de transactions ont été loguées."""
+    if not os.path.exists(LOG_PATH):
+        return {"total_predictions_logged": 0}
+    log_df = pd.read_csv(LOG_PATH)
+    return {"total_predictions_logged": len(log_df)}
+
+from fastapi.responses import HTMLResponse
+
+@app.get("/monitoring/drift-report", response_class=HTMLResponse)
+def drift_report():
+    from evidently import Report
+    from evidently.presets import DataDriftPreset
+
+    if not os.path.exists(LOG_PATH):
+        return "<h1>Aucune transaction enregistrée pour le moment.</h1><p>Effectue d'abord quelques appels à /predict.</p>"
+
+    current_data = pd.read_csv(LOG_PATH)
+    current_data = current_data.drop(columns=["fraud_probability", "is_fraud", "timestamp"])
+    reference_data = pd.read_csv("data/reference_data.csv")
+
+    report = Report([DataDriftPreset()])
+    my_eval = report.run(current_data=current_data, reference_data=reference_data)
+
+    my_eval.save_html("temp_report.html")
+    with open("temp_report.html", "r", encoding="utf-8") as f:
+        html_content = f.read()
+
+    return html_content

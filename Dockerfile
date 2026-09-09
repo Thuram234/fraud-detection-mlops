@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 COPY models/ ./models/
 
+COPY data/reference_data.csv ./data/reference_data.csv
+
 # Port sur lequel l'API va écouter à l'intérieur du conteneur
 EXPOSE 8000
 

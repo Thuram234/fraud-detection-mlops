@@ -1,5 +1,7 @@
 data/
+!data/reference_data.csv
 mlruns/
+venv/
 mlflow.db
 *.ipynb
 .git
