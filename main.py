@@ -5,10 +5,20 @@ import numpy as np
 import pandas as pd
 import os
 from datetime import datetime
+from fastapi.middleware.cors import CORSMiddleware
 
 model = joblib.load("models/model.pkl")
 
 app = FastAPI(title="Fraud Detection API")
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # en dev : tout autoriser ; en prod, on pourrait restreindre à l'URL exacte du frontend
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Chemin du fichier où on va stocker l'historique des transactions reçues
 LOG_PATH = "logs/predictions_log.csv"
